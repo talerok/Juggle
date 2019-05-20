@@ -4,320 +4,329 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.IO;
 using Interfaces;
+
+public enum BallsUpdateStatus
+{
+    Ok,
+    Fail,
+    NewBall
+}
+
 public class BallManager : MonoBehaviour {
 
-    public Transform a;
-    public Transform b;
-    public Transform c;
-    public Transform ac;
+    public Style Style;
+
     public float aSpeed;
     public float bSpeed;
     public float cSpeed;
     public float acSpeed;
 
-    public Transform Prototype;
     public Camera cam;
-    public Transform Background;
-
-    private List<Trajectory> Trajectoryes = new List<Trajectory>();
-    private List<StateTransform> Balls = new List<StateTransform>();
 
     public float pk;
-    private float complexy;
-    private float checkDist;
-    private float deleteH;
+    public int LCount;
 
-    public bool isplay;
-    private int Lap;
-    //-------
-    private int score;
-    private int record = -1;
-    private int PlayedRounds = 0;
-    //-------
-    private int TouchBorder;
+    public Transform Menu;
+    public Text ScoreText;
+    public Text RecordText;
+    public Text StartText;
 
-    private IAd Ad;
-
+    public bool isplay { get; private set; }
 
     public int Score {
         get
         {
-            return score;
+            return _score;
         }
         private set
         {
-            score = value;
-            RedrawMenu(true);
+            _score = value;
+            _redrawMenu(true);
         }
 
     }
-    public int Record {
+
+    public int Record
+    {
         get
         {
-            if(record == -1) record = LoadRecord();
-            return record;
+            return _recordManager.Record;
         }
         private set
         {
-            record = value;
-            RedrawMenu(false);
-            SaveRecord(record);
-        }
+            _recordManager.Record = value;
+            _redrawMenu(false);
         }
 
-    private const string RecordPath = "R.cd";
-
-    public int lCount;
-
-    private StateTransform last;
-
-    public Transform menu;
-    public Text ScoreText;
-    public Text RecordText;
-
-    
-
-    private void InitBall(StateTransform res)
-    {
-        res.transform.position = a.position;
-        float bsize = checkDist / 4;
-        res.transform.localScale = new Vector3(bsize, bsize, bsize);
-        last = res;
     }
 
-    private void DeleteBalls()
+    private Vector2 aPos;
+    private Vector2 bPos;
+    private Vector2 cPos;
+    private Vector2 acPos;
+
+    private List<Trajectory> _trajectoryes = new List<Trajectory>();
+    private List<StateTransform> _balls = new List<StateTransform>();
+
+    private float _complexy;
+    private float _checkDist;
+    private float _deleteH;
+
+    private int _lap = 0;
+
+    //-------
+    private int _score;
+    private int _playedRounds = 0;
+    //-------
+    private int _touchBorder;
+
+    private RecordManager _recordManager = new RecordManager();
+
+    private void _initBall(StateTransform res)
     {
-        foreach (var ball in Balls)
+        res.transform.position = new Vector3(aPos.x, aPos.y, 0);
+        float bsize = _checkDist / 4;
+        res.transform.localScale = new Vector3(bsize, bsize, bsize);
+    }
+
+    private void _deleteBalls()
+    {
+        foreach (var ball in _balls)
         {
             Destroy(ball.transform.gameObject);
         }
-        Balls.Clear();
+        _balls.Clear();
     }
 
-    private StateTransform CreateBall()
+    private StateTransform _createBall()
     {
-        var res = new StateTransform(Instantiate(Prototype));
-        InitBall(res);
-        Balls.Add(res);
-        SetComplexy();
+        var res = new StateTransform(Instantiate(Style.Ball));
+        _initBall(res);
+        _balls.Insert(0, res);
+        _setComplexy();
         return res;
     }
 
-    private void SetComplexy()
+    private void _setComplexy()
     {
-        complexy = Mathf.Sqrt(Mathf.Sqrt(Balls.Count));
+        _complexy = Mathf.Sqrt(Mathf.Sqrt(_balls.Count));
     }
 
-    private bool ChechHeight(StateTransform ball)
+    private bool _chechHeight(StateTransform ball)
     {
-        if (ball.transform.position.y <= deleteH) return true;
+        if (ball.transform.position.y <= _deleteH) return true;
         return false;
     }
 
-    private float GetDt(int id)
+    private float _getDt(int id)
     {
-        if (id == 0) return Time.deltaTime * pk * complexy;
+        if (id == 0) return Time.deltaTime * pk * _complexy;
         else return Time.deltaTime * pk;
     }
 
-    private void Moving(StateTransform ball)
+    private void _moving(StateTransform ball)
     {
         int id = ball.State;
-        ball.transform.position = Trajectoryes[id].Get(ball.transform.position, GetDt(id));
+        ball.transform.position = _trajectoryes[id].Get(ball.transform.position, _getDt(id));
     }
 
-    private bool CheckStart(StateTransform ball)
+    private bool _checkStart(StateTransform ball)
     {
-        if (Vector2.Distance(a.position, ball.transform.position) <= checkDist) return true;
+        if (Vector2.Distance(aPos, ball.transform.position) <= _checkDist) return true;
         return false;
     }
 
-    private bool CheckEnd(StateTransform ball)
+    private bool _checkEnd(StateTransform ball)
     {
-        if (Vector2.Distance(c.position, ball.transform.position) <= checkDist) return true;
+        if (Vector2.Distance(cPos, ball.transform.position) <= _checkDist) return true;
         return false;
     }
 
-    private void SetUpCam()
+    private void _setUpCam()
     {
         cam.orthographicSize = Screen.height / 2;
-        TouchBorder = cam.pixelWidth / 2;
+        _touchBorder = cam.pixelWidth / 2;
     }
 
-    private void SetUpBackGround()
+    private void _setUpBackGround()
     {
-        Background.position = new Vector3(0, 0, 10);
-        Background.localScale = new Vector3(cam.pixelHeight, cam.pixelHeight, 0);
+        var background = Instantiate(Style.Background);
+
+        background.position = new Vector3(0, 0, 10);
+        background.localScale = new Vector3(cam.pixelHeight, cam.pixelHeight, 0);
     }
 
-    private void SetUpParams()
+    private void _setUpParams()
     {
         pk = -cam.pixelWidth;
-        deleteH = GetPos(new Vector2(0, 0)).y - 20;
-        checkDist = cam.pixelHeight < cam.pixelWidth ? cam.pixelHeight / 3 : cam.pixelWidth / 3;
+        _deleteH = _getPos(new Vector2(0, 0)).y - 20;
+        _checkDist = cam.pixelHeight < cam.pixelWidth ? cam.pixelHeight / 3 : cam.pixelWidth / 3;
     }
 
-    private void SetUpObj()
+    private void _setUpCoords()
     {
-        a.localScale = new Vector3(checkDist, checkDist, checkDist);
-        c.localScale = new Vector3(checkDist, checkDist, checkDist);
-
-        a.position = GetPos(new Vector2(cam.pixelWidth, 0));
-        b.position = GetPos(new Vector2(cam.pixelWidth / 2, cam.pixelHeight));
-        c.position = GetPos(new Vector2(0, 0));
-        ac.position = GetPos(new Vector2(cam.pixelWidth / 2, cam.pixelHeight / 5));
+        aPos = _getPos(new Vector2(cam.pixelWidth, 0));
+        bPos = _getPos(new Vector2(cam.pixelWidth / 2, cam.pixelHeight));
+        cPos = _getPos(new Vector2(0, 0));
+        acPos = _getPos(new Vector2(cam.pixelWidth / 2, cam.pixelHeight / 3));
     }
 
-    private void SetUpScene()
+    private void _setUpObjects()
     {
-        SetUpParams();
-        SetUpObj();
-        
+        var leftHand = Instantiate(Style.LeftHand);
+        leftHand.position = new Vector3(cPos.x, cPos.y, 0);
+        leftHand.localScale = new Vector3(_checkDist, _checkDist, _checkDist); 
+
+        var rightHand = Instantiate(Style.RightHand);
+        rightHand.position = new Vector3(aPos.x, aPos.y, 0);
+        rightHand.localScale = new Vector3(_checkDist, _checkDist, _checkDist);
+
+        ScoreText.material = Style.ScoreMaterial;
+        RecordText.material = Style.RecordMaterial;
+        StartText.material = Style.TextMaterial;
     }
 
-    public Vector2 GetPos(Vector2 campos)
+    private void _setUpScene()
+    {
+        _setUpParams();
+        _setUpCoords();
+        _setUpObjects();
+    }
+
+    public Vector2 _getPos(Vector2 campos)
     {
         var res = cam.ScreenToWorldPoint(new Vector3(campos.x, campos.y, 0));
         return new Vector2(res.x, res.y);
     }
 
-    private void SetUpTrajectories()
+    private void _setUpTrajectories()
     {
-        Trajectoryes.Add(
+        _trajectoryes.Add(
             new Trajectory(
-                new Functions.Parabola(a.position, b.position, c.position),
-                new Functions.Parabola(new Vector2(a.position.x, aSpeed), new Vector2(b.position.x, bSpeed), new Vector2(c.position.x, cSpeed))
+                new Functions.Parabola(aPos, bPos, cPos),
+                new Functions.Parabola(new Vector2(aPos.x, aSpeed), new Vector2(bPos.x, bSpeed), new Vector2(cPos.x, cSpeed))
          ));
-        Trajectoryes.Add(
+        _trajectoryes.Add(
             new Trajectory(
-                new Functions.Parabola(c.position, ac.position, a.position),
+                new Functions.Parabola(aPos, acPos, cPos),
                 new Functions.Const(-acSpeed)
          ));
     }
-    void Start () {
-        RedrawMenu(false);
-        SetUpCam();
-        SetUpScene();
-        SetUpBackGround();
-        SetUpTrajectories();
 
-        try
-        {
-            Ad = new Ads("ca-app-pub-5544910402146685~6772042747", "ca-app-pub-5544910402146685/5963014640");
-        }
-        catch(Exception ex)
-        {
-            ScoreText.text = ex.Message;
-        }
-}
-
-    
+    public void Start () {
+        _redrawMenu(false);
+        _setUpCam();
+        _setUpScene();
+        _setUpBackGround();
+        _setUpTrajectories();
+    }
 
     public void Restart()
     {
-        DeleteBalls();
-        Lap = 0;
+        _deleteBalls();
         Score = 0;
+        _lap = 0;
         isplay = true;
-        CreateBall();
+        _createBall();
+
+        Menu.gameObject.SetActive(false);
+    }
+
+    private void _showAdd()
+    {
         
-        menu.gameObject.SetActive(false);
     }
 
-    private void ShowAdd()
+    private void _stop()
     {
-        if (PlayedRounds % 1 == 0) Ad.Show();
-    }
-
-    private void Stop()
-    {
-        PlayedRounds++;
+        _playedRounds++;
         isplay = false;
-        if (Score > Record) Record = Score;
-        menu.gameObject.SetActive(true);
+        if(Record < Score)
+            Record = Score;
+        Menu.gameObject.SetActive(true);
     }
 
-    private void RedrawMenu(bool f)
+    private void _redrawMenu(bool f)
     {
-        if (f) ScoreText.text = "Score: " + Score;
-        else RecordText.text = "Record: " + Record;
+        if (f)
+            ScoreText.text = Score.ToString();
+        else
+            RecordText.text = "Record: " + Record;
     }
 
-    private void CheckLaps(StateTransform ball)
-    {
-        if (ball != last) return;
-        Lap++;
-        if (Lap % lCount != 0) return;
-        CreateBall();
-    }
-
-    private void SaveRecord(int score)
-    {
-        File.WriteAllBytes(Application.persistentDataPath + "/" + RecordPath, BitConverter.GetBytes(score));
-    }
-
-    private int LoadRecord()
-    {
-        string path = Application.persistentDataPath + "/" + RecordPath;
-        if (!File.Exists(path)) return 0;
-        return BitConverter.ToInt32(File.ReadAllBytes(path), 0);
-    }
-
-    private bool CheckRightTouch()
+    private bool _checkRightTouch()
     {
         foreach(var a in Input.touches)
         {
-            if (a.phase == TouchPhase.Began && a.position.x <= TouchBorder) return true;
+            if (a.phase == TouchPhase.Began && a.position.x <= _touchBorder) return true;
         }
         return false;
     }
 
-    private bool CheckLeftTouch()
+    private bool _checkLeftTouch()
     {
         foreach (var a in Input.touches)
         {
-            if (a.phase == TouchPhase.Began &&  a.position.x > TouchBorder) return true;
+            if (a.phase == TouchPhase.Began &&  a.position.x > _touchBorder) return true;
         }
         return false;
     }
 
-    private bool CheckGlobalTap()
+    private bool _checkGlobalTap()
     {
         if (Input.GetKeyDown(KeyCode.Space)) return true;
         foreach (var a in Input.touches) if (a.phase == TouchPhase.Began) return true;
         return false;
     }
 
-    void Update () {
-        if (!isplay)
+    private BallsUpdateStatus _moveBalls(bool leftClick, bool rightClick)
+    {
+        bool newBall = false;
+
+        foreach (var ball in _balls)
         {
-            if (CheckGlobalTap()) Restart(); 
-            return;
-        }
-        bool click = CheckLeftTouch() || Input.GetKeyDown(KeyCode.Space);
-        bool clickt = CheckRightTouch() || Input.GetKeyDown(KeyCode.LeftControl);
-        foreach (var ball in Balls)
-        {
-            if (ChechHeight(ball))
+            if (_chechHeight(ball))
+                return BallsUpdateStatus.Fail;
+
+            if (rightClick && ball.State == 0 && _checkEnd(ball))
             {
-                Stop();
-                break;
-            }
-            if (clickt && ball.State == 0 && CheckEnd(ball))
-            {
-                CheckLaps(ball);
                 Score++;
-                ball.transform.position = c.position;
+                ball.transform.position = new Vector3(cPos.x, cPos.y, 0);
                 ball.State = 1;
+
+                if(ball == _balls[0])
+                {
+                    _lap++;
+                    if(_lap % 3 == 0)
+                        newBall = true;
+                }
             }
-            else if (click && ball.State == 1 && CheckStart(ball))
+            else if (leftClick && ball.State == 1 && _checkStart(ball))
             {
                 Score++;
-                ball.transform.position = a.position;
+                ball.transform.position = new Vector3(aPos.x, aPos.y, 0);
                 ball.State = 0;
             }
-            Moving(ball);
+            _moving(ball);
         }
+        return newBall ? BallsUpdateStatus.NewBall : BallsUpdateStatus.Ok;
+    }
+
+    void Update () {
+        bool click = _checkLeftTouch() || Input.GetKeyDown(KeyCode.Space);
+        bool clickt = _checkRightTouch() || Input.GetKeyDown(KeyCode.LeftControl);
+
+        if (!isplay)
+        {
+            if (_checkGlobalTap()) Restart(); 
+            return;
+        }
+
+        var status = _moveBalls(click, clickt);
+        if (status == BallsUpdateStatus.Fail)
+            _stop();
+        else if (status == BallsUpdateStatus.NewBall && _balls.Count < 6)
+            _createBall();
 	}
 
 
